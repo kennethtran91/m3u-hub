@@ -43,6 +43,8 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
   const [volume, setVolume] = useState(1)
   const [rotation, setRotation] = useState<Rotation>(0)
   const [fullscreen, setFullscreen] = useState(false)
+  const [fsSupported, setFsSupported] = useState(false)
+  const [fsNotice, setFsNotice] = useState<string | null>(null)
   const [controlsVisible, setControlsVisible] = useState(true)
 
   const rotated = rotation % 180 !== 0
@@ -78,13 +80,51 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
 
   const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current
+    const video = videoRef.current as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void; webkitDisplayingFullscreen?: boolean })
+      | null
     if (!container) return
+
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element
+      webkitExitFullscreen?: () => void
+    }
+    const active =
+      doc.fullscreenElement ??
+      doc.webkitFullscreenElement ??
+      (video?.webkitDisplayingFullscreen ? video : null)
+
+    if (active) {
+      try {
+        if (doc.exitFullscreen) await doc.exitFullscreen()
+        else doc.webkitExitFullscreen?.()
+      } catch {
+        // Already out of fullscreen.
+      }
+      return
+    }
+
+    const element = container as HTMLDivElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void
+      msRequestFullscreen?: () => Promise<void> | void
+    }
+    const request = (element.requestFullscreen ??
+      element.webkitRequestFullscreen ??
+      element.msRequestFullscreen) as
+      | ((options?: FullscreenOptions) => Promise<void> | void)
+      | undefined
+
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
+      if (request) {
+        await Promise.resolve(request.call(element, { navigationUI: 'hide' }))
+      } else if (video?.webkitEnterFullscreen) {
+        // iPhone Safari only offers fullscreen on the video element itself.
+        video.webkitEnterFullscreen()
+        return
+      } else {
+        setFsNotice('Trình duyệt này không hỗ trợ toàn màn hình. Dùng nút Xoay hoặc xoay ngang máy.')
         return
       }
-      await container.requestFullscreen()
       // Phones that refuse landscape can still use the rotate button.
       const orientation = screen.orientation as ScreenOrientation & {
         lock?: (orientation: string) => Promise<void>
@@ -95,9 +135,60 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
         // Orientation lock is optional; rotation handles the rest.
       }
     } catch {
-      // Fullscreen can be blocked outside a user gesture; the button stays inert.
+      setFsNotice('Không vào được toàn màn hình — trình duyệt chặn. Thử bấm lại hoặc xoay ngang máy.')
     }
   }, [])
+
+  useEffect(() => {
+    const container = containerRef.current as
+      | (HTMLDivElement & { webkitRequestFullscreen?: () => void })
+      | null
+    const video = videoRef.current as
+      | (HTMLVideoElement & {
+          webkitDisplayingFullscreen?: boolean
+          webkitEnterFullscreen?: () => void
+        })
+      | null
+
+    setFsSupported(
+      Boolean(container?.requestFullscreen ?? container?.webkitRequestFullscreen ?? video?.webkitEnterFullscreen),
+    )
+
+    const sync = () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element }
+      setFullscreen(Boolean(doc.fullscreenElement ?? doc.webkitFullscreenElement ?? video?.webkitDisplayingFullscreen))
+    }
+    const onError = () =>
+      setFsNotice('Không vào được toàn màn hình — trình duyệt chặn. Thử bấm lại hoặc xoay ngang máy.')
+
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync as EventListener)
+    document.addEventListener('fullscreenerror', onError as EventListener)
+    video?.addEventListener('webkitbeginfullscreen', sync as EventListener)
+    video?.addEventListener('webkitendfullscreen', sync as EventListener)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync as EventListener)
+      document.removeEventListener('fullscreenerror', onError as EventListener)
+      video?.removeEventListener('webkitbeginfullscreen', sync as EventListener)
+      video?.removeEventListener('webkitendfullscreen', sync as EventListener)
+    }
+  }, [])
+
+  // Leaving the player should also drop OS-level fullscreen.
+  useEffect(
+    () => () => {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!fsNotice) return
+    const id = window.setTimeout(() => setFsNotice(null), 4000)
+    return () => window.clearTimeout(id)
+  }, [fsNotice])
 
   const togglePip = useCallback(async () => {
     const video = videoRef.current
@@ -131,15 +222,11 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
         toggleMute()
       }
     }
-    const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement))
-
     document.addEventListener('keydown', onKey)
-    document.addEventListener('fullscreenchange', onFullscreenChange)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('fullscreenchange', onFullscreenChange)
       document.body.style.overflow = previous
     }
   }, [onClose, togglePlay, toggleFullscreen, cycleRotation, toggleMute, nudgeControls])
@@ -299,6 +386,14 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
         </div>
       ) : null}
 
+      {fsNotice ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center px-3">
+          <p className="rounded-md border border-warn/30 bg-black/80 px-3 py-1.5 text-center text-[11px] leading-4 text-warn">
+            {fsNotice}
+          </p>
+        </div>
+      ) : null}
+
       {controlsVisible && !error ? (
         <>
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-3 bg-gradient-to-b from-black/75 to-transparent p-3">
@@ -379,15 +474,17 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
               </button>
             ) : null}
 
-            <button
-              type="button"
-              onClick={() => void toggleFullscreen()}
-              aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
-              title="Toàn màn hình (F)"
-              className={CONTROL}
-            >
-              {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
-            </button>
+            {fsSupported ? (
+              <button
+                type="button"
+                onClick={() => void toggleFullscreen()}
+                aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                title="Toàn màn hình (F)"
+                className={CONTROL}
+              >
+                {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+              </button>
+            ) : null}
           </div>
         </>
       ) : null}
