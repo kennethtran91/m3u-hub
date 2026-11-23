@@ -8,13 +8,13 @@ Web app tĩnh để biến playlist M3U bóng đá/IPTV thành danh sách **theo
 
 - **Gom theo trận**: cùng **thời điểm bắt đầu** (instant, không phải chuỗi giờ) + cặp đội được gộp thành một card. So khớp đội: bỏ dấu, prefix, Levenshtein, **viết tắt (QPR/PSG)**, **alias CLB (Spurs/Tottenham)**, Jaccard ≥ 0.5; khác môn thể thao thì không gộp. `Manchester City` và `Man City` gộp; `Manchester United` tách riêng.
 - **Tìm kiếm không dấu** (debounce 150ms) trên tên đội, bình luận viên, tên nguồn và tiêu đề gốc.
-- **Lọc**: trạng thái (đang diễn ra / sắp tới / đã xong), môn, ngày (hôm nay / ngày mai), nhóm kênh, ẩn nguồn `no-signal` (mặc định bật), chỉ hiện trận còn nguồn sống.
+- **Lọc** gọn trong một sheet mở bằng nút **Lọc** (badge = số bộ lọc đang bật): trạng thái (đang diễn ra / sắp tới / đã xong), ngày (hôm nay / ngày mai), môn, nhóm kênh, bình luận viên, ẩn nguồn `no-signal` (mặc định bật), chỉ trận còn nguồn sống, và chọn giờ hiển thị (giờ VN / giờ máy).
 - **Mở VLC**: nút chính gọi protocol `m3uhub://` để mở **app VLC trên máy** (cài một lần bằng bộ cài tải từ app, không cần repo, không cần admin); vẫn có nút **Tải .m3u** cho máy chưa cài — file `.m3u` một nguồn (hoặc cả trận / cả danh sách đang lọc) giữ `#EXTINF group-title`, `#EXTVLCOPT:http-referrer` và `http-user-agent`. Xem thêm [Mở VLC trực tiếp](#mở-vlc-trực-tiếp).
-- **Thử trong trình duyệt** (hls.js, lazy-load): nếu stream lỗi sẽ báo rõ và mời dùng VLC; UI không vỡ.
+- **Xem trong trình duyệt** (hls.js, lazy-load): mở ra **player toàn màn hình** — thanh điều khiển tự ẩn sau 3 giây (chạm để hiện lại), phát/dừng, tắt tiếng + âm lượng, **xoay 0°/90°/180°/270°** (xoay hình, không phụ thuộc cảm biến máy), toàn màn hình (thử khoá ngang trên điện thoại), cửa sổ nổi (PiP). Phím tắt: `Space` phát/dừng · `F` toàn màn hình · `R` xoay · `M` tắt tiếng · `Esc` đóng. Stream lỗi thì hiện nút **Mở bằng VLC**.
 - **Kiểm tra link**: mỗi lần tải gọi `checkPlaylist()` → `OK / EMPTY / HTTP_ERROR / NETWORK_ERROR / TIMEOUT`. Link chết/rỗng sẽ hiện modal chặn với lý do, ô nhập link mới, nút **Kiểm tra** (validate tại chỗ trước khi lưu) và **Dùng dữ liệu đã lưu** (chỉ bật khi có cache).
 - **Cache offline**: playlist thô + thời điểm tải lưu trong `localStorage`; app vẫn dùng được khi link chết/mất mạng (phải bấm chọn rõ ràng, không tự fallback).
-- **Tự kiểm tra lại mỗi 15 phút** khi tab đang mở; thanh trạng thái nhỏ luôn hiện lần kiểm tra gần nhất.
-- **Giao diện tối**, dày kiểu bảng tỉ số, responsive (sidebar → chip cuộn ngang trên mobile). Toàn bộ copy tiếng Việt.
+- **Tự kiểm tra lại mỗi 15 phút** khi tab đang mở. Sức khoẻ playlist chỉ hiện trên thanh trên dưới dạng một dòng nhỏ khi có vấn đề (link lỗi, đang dùng cache, mốc cập nhật quá cũ) — bình thường không chiếm chỗ.
+- **Giao diện tối tối giản**: một hàng header, một hàng lọc, danh sách mỗi trận một dòng; màu **than chì + hổ phách** (`#f59e0b` là accent duy nhất — dot trạng thái, pill LIVE, nút chính, thanh tiến trình, viền trái card live). Toàn bộ copy tiếng Việt.
 
 ## Cài đặt & chạy
 
@@ -73,7 +73,7 @@ src/
   lib/download.ts   Blob download + copy clipboard
   lib/__tests__/snapshot.ts  sinh playlist tổng hợp cho test (không chứa dữ liệu provider)
   hooks/            usePlaylist, useNow, useDebouncedValue
-  components/       TopBar, Sidebar, FilterBar, MatchCard, PlayerModal, LinkModal, …
+  components/       TopBar, FilterBar, FilterSheet, MatchCard, PlayerModal, LinkModal, …
 ```
 
 ## Mở VLC trực tiếp

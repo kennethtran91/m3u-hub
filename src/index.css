@@ -17,13 +17,13 @@
   }
 
   ::selection {
-    background: rgba(52, 211, 153, 0.25);
+    background: rgba(245, 158, 11, 0.25);
   }
 
   /* Thin, dark scrollbars like a scoreboard. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2e3a34 transparent;
+    scrollbar-color: #2a2a2a transparent;
   }
 
   *::-webkit-scrollbar {
@@ -32,7 +32,7 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background: #2e3a34;
+    background: #2a2a2a;
     border-radius: 999px;
   }
 
@@ -41,7 +41,7 @@
   }
 
   :focus-visible {
-    outline: 1px solid rgba(52, 211, 153, 0.55);
+    outline: 1px solid rgba(245, 158, 11, 0.55);
     outline-offset: 2px;
   }
 }

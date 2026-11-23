@@ -5,26 +5,28 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Graphite + amber. `live` is the one accent colour: status dot, LIVE
+        // pill, primary buttons, progress bar, live card edge.
         ink: {
-          950: '#080a09',
-          900: '#0b0e0c',
-          850: '#0f1311',
-          800: '#131816',
-          750: '#171d1a',
-          700: '#1c2420',
+          950: '#0a0a0a',
+          900: '#111111',
+          850: '#161616',
+          800: '#1c1c1c',
+          750: '#232323',
+          700: '#2b2b2b',
         },
         line: {
-          DEFAULT: '#222b27',
-          soft: '#1a211e',
-          strong: '#2e3a34',
+          DEFAULT: '#2a2a2a',
+          soft: '#1f1f1f',
+          strong: '#3a3a3a',
         },
         live: {
-          DEFAULT: '#34d399',
-          dim: '#0f2a22',
-          text: '#6ee7b7',
+          DEFAULT: '#f59e0b',
+          dim: '#2a1c05',
+          text: '#fcd34d',
         },
-        warn: '#fbbf24',
-        muted: '#8b968f',
+        warn: '#fb923c',
+        muted: '#9a9a95',
       },
       fontFamily: {
         sans: [
@@ -45,8 +47,8 @@ export default {
       },
       keyframes: {
         'live-pulse': {
-          '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(52,211,153,0.45)' },
-          '50%': { opacity: '.75', boxShadow: '0 0 0 4px rgba(52,211,153,0)' },
+          '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(245,158,11,0.5)' },
+          '50%': { opacity: '.7', boxShadow: '0 0 0 0 rgba(245,158,11,0)' },
         },
         'fade-up': {
           from: { opacity: '0', transform: 'translateY(4px)' },

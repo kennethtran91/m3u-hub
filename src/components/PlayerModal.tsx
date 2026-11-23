@@ -1,29 +1,148 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
-import { Copy, Download, Loader2, MonitorPlay, Play, TriangleAlert, X } from 'lucide-react'
+import {
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Pause,
+  PictureInPicture2,
+  Play,
+  RotateCw,
+  TriangleAlert,
+  Tv,
+  Volume2,
+  VolumeX,
+  X,
+} from 'lucide-react'
 import type { Source } from '../lib/types'
-import { buildSourceM3U, sourceFilename } from '../lib/export'
-import { copyText, downloadTextFile } from '../lib/download'
 import { openInVlc } from '../lib/vlc'
+import { cn } from '../lib/cn'
 
+type Rotation = 0 | 90 | 180 | 270
+const ROTATIONS: Rotation[] = [0, 90, 180, 270]
+const CONTROLS_TIMEOUT_MS = 3000
+
+const CONTROL =
+  'grid h-9 w-9 shrink-0 place-items-center rounded-md border border-white/15 bg-black/55 text-white transition-colors hover:border-white/35 hover:bg-black/75'
+const CONTROL_WIDE =
+  'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors'
+
+/**
+ * Full-screen player. Rotating the video (not just the device) is the point:
+ * 90°/270° swap the element's box to the viewport's short/long side so the
+ * picture still fills the screen after the rotation.
+ */
 export function PlayerModal({ source, onClose }: { source: Source; onClose: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [muted, setMuted] = useState(false)
+  const [volume, setVolume] = useState(1)
+  const [rotation, setRotation] = useState<Rotation>(0)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [controlsVisible, setControlsVisible] = useState(true)
+
+  const rotated = rotation % 180 !== 0
+
+  const nudgeControls = useCallback(() => {
+    setControlsVisible(true)
+  }, [])
+
+  useEffect(() => {
+    if (!controlsVisible || !playing) return
+    const id = window.setTimeout(() => setControlsVisible(false), CONTROLS_TIMEOUT_MS)
+    return () => window.clearTimeout(id)
+  }, [controlsVisible, playing, rotation])
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    if (video.paused) void video.play().catch(() => {})
+    else video.pause()
+  }, [])
+
+  const toggleMute = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.muted = !video.muted
+    setMuted(video.muted)
+  }, [])
+
+  const cycleRotation = useCallback(() => {
+    setRotation((value) => ROTATIONS[(ROTATIONS.indexOf(value) + 1) % ROTATIONS.length])
+    nudgeControls()
+  }, [nudgeControls])
+
+  const toggleFullscreen = useCallback(async () => {
+    const container = containerRef.current
+    if (!container) return
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
+      await container.requestFullscreen()
+      // Phones that refuse landscape can still use the rotate button.
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (orientation: string) => Promise<void>
+      }
+      try {
+        await orientation.lock?.('landscape')
+      } catch {
+        // Orientation lock is optional; rotation handles the rest.
+      }
+    } catch {
+      // Fullscreen can be blocked outside a user gesture; the button stays inert.
+    }
+  }, [])
+
+  const togglePip = useCallback(async () => {
+    const video = videoRef.current
+    if (!video || !document.pictureInPictureEnabled) return
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture()
+      else await video.requestPictureInPicture()
+    } catch {
+      // Not available for this stream.
+    }
+  }, [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (event.key === 'Escape') {
+        if (document.fullscreenElement) return
+        onClose()
+        return
+      }
+      if (event.key === ' ' || event.key === 'k') {
+        event.preventDefault()
+        togglePlay()
+        nudgeControls()
+      } else if (event.key === 'f') {
+        void toggleFullscreen()
+      } else if (event.key === 'r') {
+        cycleRotation()
+      } else if (event.key === 'm') {
+        toggleMute()
+      }
     }
+    const onFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement))
+
     document.addEventListener('keydown', onKey)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
       document.body.style.overflow = previous
     }
-  }, [onClose])
+  }, [onClose, togglePlay, toggleFullscreen, cycleRotation, toggleMute, nudgeControls])
 
   useEffect(() => {
     const video = videoRef.current
@@ -33,6 +152,7 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
     let cancelled = false
     setError(null)
     setLoading(true)
+    setPlaying(false)
 
     const fail = (message: string) => {
       if (cancelled) return
@@ -42,22 +162,28 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
     const onPlaying = () => {
       if (!cancelled) setLoading(false)
     }
+    const onPlay = () => setPlaying(true)
+    const onPause = () => setPlaying(false)
+    const onVolume = () => {
+      setVolume(video.volume)
+      setMuted(video.muted)
+    }
+
     video.addEventListener('playing', onPlaying)
+    video.addEventListener('play', onPlay)
+    video.addEventListener('pause', onPause)
+    video.addEventListener('volumechange', onVolume)
 
     const timer = window.setTimeout(() => {
       if (!cancelled && video.currentTime === 0) {
-        fail(
-          'Không nhận được hình sau 15 giây. Nguồn có thể đang chết, chặn theo vùng (geo-block) hoặc cần header referrer — hãy dùng VLC.',
-        )
+        fail('Không nhận được hình sau 15 giây. Nguồn có thể đang chết, chặn theo vùng hoặc cần header referrer — hãy mở bằng VLC.')
       }
     }, 15_000)
 
     if (source.format === 'rtmp') {
       fail('Nguồn RTMP không phát được trong trình duyệt. Hãy mở bằng VLC.')
     } else if (source.format === 'flv') {
-      fail(
-        'Nguồn .flv (HTTP-FLV) không phát được bằng thẻ video của trình duyệt. Hãy mở bằng VLC.',
-      )
+      fail('Nguồn .flv (HTTP-FLV) không phát được bằng thẻ video của trình duyệt. Hãy mở bằng VLC.')
     } else if (source.format === 'hls' && Hls.isSupported()) {
       // The worker build of hls.js 1.7.x reproduces `bufferAppendError`
       // ("SourceBuffer does not exist") on these live TS streams; the main
@@ -77,7 +203,7 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         void video.play().catch(() => {
-          // Autoplay can be blocked; the native controls still work.
+          // Autoplay can be blocked; the play button still works.
         })
       })
       hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -100,123 +226,171 @@ export function PlayerModal({ source, onClose }: { source: Source; onClose: () =
       cancelled = true
       window.clearTimeout(timer)
       video.removeEventListener('playing', onPlaying)
+      video.removeEventListener('play', onPlay)
+      video.removeEventListener('pause', onPause)
+      video.removeEventListener('volumechange', onVolume)
       if (hls) hls.destroy()
       video.removeAttribute('src')
       video.load()
     }
   }, [source])
 
-  const handleCopy = async () => {
-    if (await copyText(source.url)) {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
-    }
-  }
+  useEffect(() => {
+    if (!error) return
+    setControlsVisible(true)
+  }, [error])
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
+      ref={containerRef}
+      className="fixed inset-0 z-50 bg-black"
       role="dialog"
       aria-modal="true"
-      aria-label="Xem thử nguồn trong trình duyệt"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+      aria-label={source.title}
+      onPointerMove={nudgeControls}
+      onPointerDown={nudgeControls}
     >
-      <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-line bg-ink-900 shadow-pop">
-        <div className="flex items-center gap-2 border-b border-line px-3 py-2 sm:px-4">
-          <MonitorPlay className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-zinc-100">{source.title}</div>
-            <div className="truncate text-[10px] text-muted">
-              {source.group} · {source.format.toUpperCase()} · thử nghiệm trong trình duyệt
+      <div className="absolute inset-0 grid place-items-center overflow-hidden">
+        <video
+          ref={videoRef}
+          playsInline
+          onClick={togglePlay}
+          className="object-contain"
+          style={{
+            width: rotated ? '100dvh' : '100%',
+            height: rotated ? '100dvw' : '100%',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            transform: `rotate(${rotation}deg)`,
+            transition: 'transform .18s ease-out',
+          }}
+        />
+      </div>
+
+      {loading && !error ? (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <Loader2 className="h-7 w-7 animate-spin text-white/80" aria-hidden />
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="absolute inset-0 grid place-items-center bg-black/85 p-5 text-center">
+          <div className="max-w-sm">
+            <TriangleAlert className="mx-auto h-6 w-6 text-warn" aria-hidden />
+            <p className="mt-3 text-[12.5px] leading-5 text-zinc-300">{error}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => openInVlc(source)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-live/45 bg-live/20 px-3 text-[12.5px] font-semibold text-live-text hover:border-live/70"
+              >
+                <Tv className="h-4 w-4" aria-hidden />
+                Mở bằng VLC
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-white/15 bg-black/55 px-3 text-[12.5px] text-zinc-200 hover:border-white/35"
+              >
+                Đóng
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng"
-            className="grid h-7 w-7 place-items-center rounded text-muted hover:bg-ink-800 hover:text-zinc-100"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
         </div>
+      ) : null}
 
-        <div className="relative aspect-video w-full bg-black">
-          <video
-            ref={videoRef}
-            controls
-            playsInline
-            className="h-full w-full"
-            poster=""
-          />
-          {loading && !error ? (
-            <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/40">
-              <Loader2 className="h-6 w-6 animate-spin text-zinc-300" aria-hidden />
-            </div>
-          ) : null}
-          {error ? (
-            <div className="absolute inset-0 grid place-items-center bg-ink-950/90 p-5 text-center">
-              <div className="max-w-sm">
-                <TriangleAlert className="mx-auto h-6 w-6 text-warn" aria-hidden />
-                <p className="mt-3 text-xs leading-5 text-zinc-300">{error}</p>
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openInVlc(source)}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-live/40 bg-live/20 px-3 py-2 text-xs font-semibold text-live-text shadow-panel hover:border-live/60 hover:bg-live/30"
-                  >
-                    <Play className="h-4 w-4" aria-hidden />
-                    Mở bằng VLC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadTextFile(sourceFilename(source), buildSourceM3U(source), 'application/x-mpegurl')
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-md border border-line bg-ink-850 px-3 py-2 text-[11px] text-zinc-300 hover:border-line-strong"
-                  >
-                    <Download className="h-3.5 w-3.5" aria-hidden />
-                    Tải .m3u
-                  </button>
-                </div>
+      {controlsVisible && !error ? (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start gap-3 bg-gradient-to-b from-black/75 to-transparent p-3">
+            <button type="button" onClick={onClose} aria-label="Đóng" className={cn(CONTROL, 'pointer-events-auto')}>
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+            <div className="pointer-events-none min-w-0 flex-1 pt-1">
+              <div className="truncate text-[13px] font-semibold text-white">{source.title}</div>
+              <div className="truncate text-[10.5px] text-white/70">
+                {source.group}
+                {source.format === 'unknown' ? '' : ` · ${source.format.toUpperCase()}`}
+                {source.referrer ? ' · có referrer' : ''}
               </div>
             </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-2 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] leading-4 text-muted">
-            Trình duyệt chỉ phát được nguồn <span className="font-mono">.m3u8</span> qua https và
-            không gắn header <span className="font-mono">referrer</span>. Nguồn gắn referrer,
-            <span className="font-mono"> .flv</span> hoặc <span className="font-mono">rtmp</span> chỉ
-            xem được bằng VLC — nút “Xem” đã bị khoá cho các nguồn đó.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-ink-850 px-2.5 py-1.5 text-[11px] text-zinc-300 hover:border-line-strong"
-            >
-              <Copy className="h-3.5 w-3.5" aria-hidden />
-              {copied ? 'Đã copy link' : 'Copy link'}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                downloadTextFile(sourceFilename(source), buildSourceM3U(source), 'application/x-mpegurl')
-              }
-              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-ink-850 px-2.5 py-1.5 text-[11px] text-zinc-300 hover:border-line-strong"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden />
-              Tải .m3u cho VLC
-            </button>
-            <span className="ml-auto text-[10px] text-muted">
-              {source.referrer ? 'Có referrer header' : 'Không có referrer'}
-            </span>
           </div>
-        </div>
-      </div>
+
+          <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 to-transparent p-3">
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={playing ? 'Tạm dừng' : 'Phát'}
+              className={CONTROL}
+            >
+              {playing ? <Pause className="h-4 w-4" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />}
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleMute}
+              aria-label={muted ? 'Bật tiếng' : 'Tắt tiếng'}
+              className={CONTROL}
+            >
+              {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
+            </button>
+
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              onChange={(event) => {
+                const video = videoRef.current
+                if (!video) return
+                const next = Number(event.target.value)
+                video.volume = next
+                video.muted = next === 0
+                nudgeControls()
+              }}
+              aria-label="Âm lượng"
+              className="hidden h-1 w-24 shrink-0 accent-live sm:block"
+            />
+
+            <span className="ml-auto hidden shrink-0 rounded border border-live/45 bg-live/15 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-live-text sm:inline">
+              Live
+            </span>
+
+            <button
+              type="button"
+              onClick={cycleRotation}
+              aria-label="Xoay màn hình"
+              title="Xoay (R)"
+              className={cn(CONTROL_WIDE, 'border-white/15 bg-black/55 text-white hover:border-white/35')}
+            >
+              <RotateCw className="h-4 w-4" aria-hidden />
+              <span className="tabular-nums">{rotation}°</span>
+            </button>
+
+            {document.pictureInPictureEnabled ? (
+              <button
+                type="button"
+                onClick={() => void togglePip()}
+                aria-label="Cửa sổ nổi"
+                title="Cửa sổ nổi"
+                className={CONTROL}
+              >
+                <PictureInPicture2 className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void toggleFullscreen()}
+              aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+              title="Toàn màn hình (F)"
+              className={CONTROL}
+            >
+              {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
