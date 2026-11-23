@@ -14,7 +14,7 @@ Web app tĩnh để biến playlist M3U bóng đá/IPTV thành danh sách **theo
 - **Kiểm tra link**: mỗi lần tải gọi `checkPlaylist()` → `OK / EMPTY / HTTP_ERROR / NETWORK_ERROR / TIMEOUT`. Link chết/rỗng sẽ hiện modal chặn với lý do, ô nhập link mới, nút **Kiểm tra** (validate tại chỗ trước khi lưu) và **Dùng dữ liệu đã lưu** (chỉ bật khi có cache).
 - **Cache offline**: playlist thô + thời điểm tải lưu trong `localStorage`; app vẫn dùng được khi link chết/mất mạng (phải bấm chọn rõ ràng, không tự fallback).
 - **Tự kiểm tra lại mỗi 15 phút** khi tab đang mở. Sức khoẻ playlist chỉ hiện trên thanh trên dưới dạng một dòng nhỏ khi có vấn đề (link lỗi, đang dùng cache, mốc cập nhật quá cũ) — bình thường không chiếm chỗ.
-- **Giao diện tối tối giản**: một hàng header, một hàng lọc, danh sách mỗi trận một dòng; màu **than chì + hổ phách** (`#f59e0b` là accent duy nhất — dot trạng thái, pill LIVE, nút chính, thanh tiến trình, viền trái card live). Toàn bộ copy tiếng Việt.
+- **Giao diện tối tối giản**: một hàng header, một hàng lọc, danh sách mỗi trận một dòng; màu **than chì + hổ phách** (`#f59e0b` là accent duy nhất — dot trạng thái, pill LIVE, nút chính, thanh tiến trình). Trận đang diễn ra được viền hổ phách kín 4 cạnh + nền ám nhẹ + cạnh trái dày 3px (vẽ bằng `box-shadow` inset nên chiều cao dòng không đổi giữa các trạng thái). Toàn bộ copy tiếng Việt.
 
 ## Cài đặt & chạy
 

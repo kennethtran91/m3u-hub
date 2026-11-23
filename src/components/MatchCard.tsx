@@ -173,8 +173,11 @@ export function MatchCard({ match, sources, now, zone = 'vn', onPlay, onExportMa
   return (
     <article
       className={cn(
-        'border-b border-line-soft border-l-2 border-l-transparent last:border-b-0',
-        status === 'live' && 'border-l-live',
+        'border-b border-line-soft last:border-b-0',
+        // Live rows get a full amber ring plus a thicker left edge, drawn as an
+        // inset shadow so the row height never shifts between states.
+        status === 'live' &&
+          'border-b-transparent bg-live/[0.05] shadow-[inset_0_0_0_1px_rgba(245,158,11,0.35),inset_3px_0_0_0_#f59e0b]',
       )}
     >
       <button
